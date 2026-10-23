@@ -1,4 +1,5 @@
-
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 import streamlit as st
 import requests
 import re
@@ -92,9 +93,59 @@ if st.button("Find My Books", type="primary"):
                     unique[title.lower()] = book
 
             # Score relevance to the user's actual interests.
-            words = re.findall(
-                r"\w+", (genre + " " + interest + " " + search).lower()
-            )
+      
+# Prepare book descriptions for the AI model
+book_list = list(unique.values())
+documents = []
+
+for book in book_list:
+    info = book.get("volumeInfo", {})
+    text = " ".join([
+        info.get("title", ""),
+        " ".join(info.get("categories", [])),
+        info.get("description", ""),
+        " ".join(info.get("authors", []))
+    ])
+    documents.append(text)
+
+# Train the content-matching model on retrieved books
+vectorizer = TfidfVectorizer(stop_words="english")
+book_vectors = vectorizer.fit_transform(documents)
+
+# Convert user interests into a vector
+user_query = " ".join([
+    genre if genre != "Any Genre" else "",
+    interest,
+    search
+]).strip()
+
+query_vector = vectorizer.transform([user_query])
+similarities = cosine_similarity(
+    query_vector, book_vectors
+).flatten()
+
+results = []
+
+for i, book in enumerate(book_list):
+    info = book.get("volumeInfo", {})
+    title = info.get("title", "")
+
+    popular_match = any(
+        name.lower() in title.lower()
+        for name in popular
+    )
+
+    rating = info.get("averageRating", 0)
+
+    # Relevance is the main priority
+    score = similarities[i] * 100
+    score += 3 if popular_match else 0
+    score += rating * 0.3
+
+    results.append((score, popular_match, book))
+
+results.sort(key=lambda x: x[0], reverse=True)
+
             results = []
 
             for book in unique.values():
